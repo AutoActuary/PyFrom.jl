@@ -1,6 +1,6 @@
 # PyFrom.jl
 
-This module helps in duplicating some extra python import syntax, more specifically the syntax:
+This module adds extra python import syntax to PyCall, more specifically the syntax:
 ```
 from module.submodule import a, b, sea as c
 ```
