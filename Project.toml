@@ -1,0 +1,14 @@
+name = "PyFrom"
+uuid = "a020b6ee-df6a-4e72-9606-3e52d78b1dfd"
+authors = ["heetbeet heetbeet@users.noreply.github.com and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
