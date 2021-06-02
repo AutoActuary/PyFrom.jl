@@ -7,7 +7,7 @@ from module import x, y, z as zee
 
 ### Example usage
 ```
-Using PyFrom
+using PyFrom
 @pyfrom math import inf as py∞, pi as pyπ, tau
 ```
 
