@@ -1,5 +1,5 @@
 module PyFrom
-    using Base: Symbol, Tuple, UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS
+    using Base: Symbol, Tuple
     using PyCall
     export @pyfrom
 
@@ -8,6 +8,9 @@ module PyFrom
         var::String
     end
 
+    struct DotExpansionException <: Exception 
+        var::String
+    end
 
     macro pyfrom(modname, importphrase)
         return pyfrom(modname, importphrase)
@@ -20,6 +23,13 @@ module PyFrom
             "got `@pyfrom $modname $importphrase`")
         end
 
+        nodes, paths = try
+            dotpath_expansion(modname)
+        catch e
+            e isa DotExpansionException  && throw(DotExpansionException(errmessage()))
+            rethrow(e)
+        end
+
         importmap = try
             importphrase_to_mapping(importphrase)
         catch e
@@ -27,10 +37,47 @@ module PyFrom
             rethrow(e)
         end
 
-        # list of creeping module paths, like [:(a), :(a.b), :(a.b.c), :(a.b.c.d)]
-        nodes = []
-        paths = []
-        ex = modname
+        # The secret souce
+        @gensym imports
+        esc(:($(Expr(:tuple, [name for (_, name) in importmap]...)) = $(get_module_imports)($nodes, $paths, $importmap)))
+    end
+
+
+    get_module_imports(nodes::Vector{Symbol},
+                       paths::Vector{Union{Symbol, Expr}},
+                       importmap::Vector{Pair{Symbol, Symbol}}) = begin
+        # import from deeper nest, i.e. a -> a.b -> a.b.c -> a.b.c.d
+        nextleaf(moduleleaf, node, path) = begin
+            if moduleleaf === nothing || !hasproperty(moduleleaf, node)
+                PyCall._pywrap_pyimport(pyimport(PyCall.modulename(path)))
+            else
+                getproperty(moduleleaf, node)
+            end
+        end
+
+        # find module leaf
+        moduleleaf = nothing
+        for (node, path) in zip(nodes, paths)
+            moduleleaf = nextleaf(moduleleaf, node, path)
+        end
+
+        # get relevant children in a list
+        imports = []
+        for (node, _) in importmap
+            path = Expr(:., paths[end], QuoteNode(node))
+            push!(imports, nextleaf(moduleleaf, node, path))
+        end
+
+        return imports
+    end
+
+
+    dotpath_expansion(expr) = begin
+        errmessage = "Expected dot expression like `a.b.c.d.e`, got $(expr)"
+
+        nodes = Vector{Symbol}()
+        paths = Vector{Union{Symbol, Expr}}()
+        ex = expr
         while ex isa Expr && ex.head == (:.)
             push!(paths, ex)
 
@@ -42,68 +89,22 @@ module PyFrom
             if tail isa Symbol
                 push!(nodes, tail)
             else
-                throw(ErrorException(errmessage))
+                throw(DotExpansionException(errmessage))
             end
         end
         if ex isa Symbol
             push!(paths, ex)
             push!(nodes, ex)
         else
-            throw(ErrorException(errmessage))
+            throw(DotExpansionException(errmessage))
         end
 
         nodes = reverse(nodes)
         paths = reverse(paths)
 
-        # The secret souce
-        @gensym get_module_imports moduleleaf imports node path pyobj_temp ii
-
-        # Rename list of modules into their final names `aa = imports[1]; bb = imports[2]; ...`
-        add_names_to_imports = Expr(:block, 
-                                    [:(
-                                    $name = $imports[$i]
-                                    ) for (i, (_, name)) in enumerate(importmap)]...)
-
-        esc(quote
-            # Generated function to retrieve all the imports
-            $get_module_imports() = begin
-                $moduleleaf = nothing
-                for ($node, $path) in zip($nodes, $paths)
-
-                    if $moduleleaf === nothing
-                        $moduleleaf =  $PyCall._pywrap_pyimport(pyimport($PyCall.modulename($path)))
-                    elseif !hasproperty($moduleleaf, $node)
-                        $pyobj_temp = $PyCall._pywrap_pyimport(pyimport($PyCall.modulename($path)))
-                        #setproperty!($moduleleaf, $node, $pyobj_temp)
-
-                        $moduleleaf = $pyobj_temp
-                    else
-                        $moduleleaf =  getproperty($moduleleaf, $node)
-                    end
-                end
-
-                # Get all the ``... import a as aa, b as bb, c as cc, ...` into 
-                # list a of objects `imports =  [_, _, _, ...]`
-                $imports = []
-                for ($node, _) in $importmap
-                    if hasproperty($moduleleaf, $node)
-                        push!($imports, getproperty($moduleleaf, $node))
-                    else
-                        $path = Expr(:., $paths[end], QuoteNode($node))
-                        push!($imports, $PyCall._pywrap_pyimport(pyimport(PyCall.modulename($path))))
-                    end
-                end
-
-                return $imports
-            end
-
-            $imports = $get_module_imports()
-
-            # final names `aa = imports[1]; bb = imports[2]; ...`
-            $add_names_to_imports
-        end)
-
+        return nodes, paths
     end
+
 
     importphrase_to_mapping(expr::Expr) = begin
         err_message = "Expected import statement pattern like `import c as cc, d, e as ee, f, g`, got `$(expr)`"
@@ -116,12 +117,18 @@ module PyFrom
         for i in expr.args
             push!(
                 pairs,
-                i.head == :as ?  [i.args[1], i.args[2]] : [i.args[1], i.args[1]]
+                if i.head == :as 
+                    [i.args[1], i.args[2]] 
+                else
+                    length(i.args)!=1 && throw(ImportPhraseException(err_message))
+                    [i.args[1], i.args[1]]
+                end
             )
         end
 
+        pairs_final = Vector{Pair{Symbol, Symbol}}()
         # Extract only the symbols from the mapping
-        for (i, pair) in enumerate(pairs)
+        for pair in pairs
             for (j, item) in enumerate(pair)
                 if item isa Symbol
                 elseif item isa Expr
@@ -134,10 +141,10 @@ module PyFrom
                     throw(ImportPhraseException(err_message))
                 end
             end
-            pairs[i] = pair[1] => pair[2]
+            push!(pairs_final, pair[1] => pair[2])
         end
         
-        return pairs
+        return pairs_final
     end
 
 end
