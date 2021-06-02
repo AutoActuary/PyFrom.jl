@@ -1,9 +1,6 @@
 # PyFrom.jl
 
-This module adds extra python import syntax to PyCall, more specifically the syntax:
-```
-from module import x, y, z as zee
-```
+This module adds the `from module import x as y` syntax to PyCall.
 
 ### Example usage
 ```
