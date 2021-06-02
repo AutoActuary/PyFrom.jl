@@ -1,2 +1,10 @@
 # PyFrom.jl
-Extra notation for PyCall imports: @pyfrom module import a, b, c
+
+This module helps in duplicating some extra python import syntax, more specifically the syntax `from module.submodule import a, b, sea as c`
+
+### Usage
+```
+Using PyFrom
+@pyfrom math import inf as py∞, pi as pyπ, tau
+```
+
