@@ -19,7 +19,7 @@ module PyFrom
 
     pyfrom(modname, importphrase) = begin
         errmessage() = begin
-            ("@pyfrom must follow a pattern like `@pyfrom a.b import c as cc, d, e as ee, f, g`, " *
+            ("@pyfrom must follow a pattern like `@pyfrom a.b import c as d, e, f as g`, " *
             "got `@pyfrom $modname $importphrase`")
         end
 
@@ -38,8 +38,8 @@ module PyFrom
         end
 
         # The secret souce
-        @gensym imports
-        esc(:($(Expr(:tuple, [name for (_, name) in importmap]...)) = $(get_module_imports)($nodes, $paths, $importmap)))
+        names = (name for (_, name) in importmap)
+        esc(:($(Expr(:tuple, names...)) = $(get_module_imports)($nodes, $paths, $importmap)))
     end
 
 
@@ -61,7 +61,7 @@ module PyFrom
             moduleleaf = nextleaf(moduleleaf, node, path)
         end
 
-        # get relevant children in a list
+        # get relevant children from importmap in a list of modules/pyobjects
         imports = []
         for (node, _) in importmap
             path = Expr(:., paths[end], QuoteNode(node))
@@ -73,7 +73,7 @@ module PyFrom
 
 
     dotpath_expansion(expr) = begin
-        errmessage = "Expected dot expression like `a.b.c.d.e`, got $(expr)"
+        errmessage = "Expected dotted expression like `a.b.c.d.e`, got $(expr)"
 
         nodes = Vector{Symbol}()
         paths = Vector{Union{Symbol, Expr}}()
@@ -107,12 +107,13 @@ module PyFrom
 
 
     importphrase_to_mapping(expr::Expr) = begin
-        err_message = "Expected import statement pattern like `import c as cc, d, e as ee, f, g`, got `$(expr)`"
+        err_message = "Expected import statement pattern like `import a as b, c, d as e, f, g`, got `$(expr)`"
 
         if expr.head != :import 
             throw(ImportPhraseException(err_message))
         end
 
+        # group `a as b, c as d, ...` as [[:a, :b], [:c, :d], ...]
         pairs = []
         for i in expr.args
             push!(
@@ -120,14 +121,14 @@ module PyFrom
                 if i.head == :as 
                     [i.args[1], i.args[2]] 
                 else
-                    length(i.args)!=1 && throw(ImportPhraseException(err_message))
+                    length(i.args) != 1 && throw(ImportPhraseException(err_message))
                     [i.args[1], i.args[1]]
                 end
             )
         end
 
+        # sanitize inputs and convert to [:a=>:b, :c=>d, ...] type of list
         pairs_final = Vector{Pair{Symbol, Symbol}}()
-        # Extract only the symbols from the mapping
         for pair in pairs
             for (j, item) in enumerate(pair)
                 if item isa Symbol
