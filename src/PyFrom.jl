@@ -39,10 +39,7 @@ module PyFrom
 
         # The secret souce
         names = [name for (_, name) in importmap]
-        @gensym imports 
-        esc(:($imports = $get_module_imports($nodes, $paths, $importmap);
-              $(Expr(:tuple, names...)) = $imports; 
-              last($imports)))
+        esc(:(($(Expr(:tuple, names...)) = $get_module_imports($nodes, $paths, $importmap))[end]))
     end
 
 
