@@ -106,7 +106,7 @@ module PyFrom
     end
 
 
-    importphrase_to_mapping(expr::Expr) = begin
+    importphrase_to_mapping(expr::Expr)::Vector{Pair{Symbol, Symbol}} = begin
         err_message = "Expected import statement pattern like `import a as b, c, d as e, f, g`, got `$(expr)`"
 
         if expr.head != :import 
